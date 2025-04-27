@@ -1,0 +1,2 @@
+# sendinput-timestamp-output
+タイムスタンプを取得してテキスト入力領域に直接出力するアプリケーション
