@@ -5,7 +5,7 @@
 `get_time_sendinput_win_wchar.exe`をダブルクリックすると、テキスト入力領域にタイムスタンプ（半角英数字）を自動出力する。
 
 ## ビルド用バッチファイル or 実行ファイル（.exe）  
-https://github.com/imagawatatsuya/sendinput-timestamp-output/releases/tag/0.1
+https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 
 ## 前提
 テキストエディタやMicrosoft WORD等における利用は想定していない。マクロによるタイムスタンプ生成を推奨する。  
