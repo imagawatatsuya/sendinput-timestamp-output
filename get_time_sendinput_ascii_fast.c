@@ -13,7 +13,6 @@ static const char* wday_ascii_lower[] = {"sun", "mon", "tue", "wed", "thu", "fri
 
 typedef struct {
     HWND ime_target_window;
-    HKL keyboard_layout;
     BOOL has_ime_context;
     BOOL has_conversion_state;
     BOOL previous_ime_open;
@@ -23,12 +22,10 @@ typedef struct {
 
 void send_alt_tab(void);
 void show_error_message(const char* message);
-void send_ascii_string_with_layout(const char* str, HKL keyboard_layout);
-void send_vk_key(WORD vk, DWORD key_up);
-void send_vk_combo(WORD vk, BYTE shift_state);
+void send_ascii_string_as_unicode_input(const char* str);
 BOOL prepare_ascii_input(HWND foreground_window, ASCII_INPUT_STATE* input_state);
 void restore_ascii_input(const ASCII_INPUT_STATE* input_state);
-HWND find_ime_target_window(HWND foreground_window, DWORD* target_thread_id);
+HWND find_ime_target_window(HWND foreground_window);
 DWORD build_halfwidth_alnum_conversion_mode(DWORD current_conversion_mode);
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -82,7 +79,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
-    send_ascii_string_with_layout(time_string, input_state.keyboard_layout);
+    send_ascii_string_as_unicode_input(time_string);
     restore_ascii_input(&input_state);
 
     return 0;
@@ -90,21 +87,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 BOOL prepare_ascii_input(HWND foreground_window, ASCII_INPUT_STATE* input_state) {
     HIMC himc;
-    DWORD target_thread_id = 0;
 
     if (input_state == NULL) {
         return FALSE;
     }
 
     ZeroMemory(input_state, sizeof(*input_state));
-    input_state->ime_target_window = find_ime_target_window(foreground_window, &target_thread_id);
-
-    if (target_thread_id != 0) {
-        input_state->keyboard_layout = GetKeyboardLayout(target_thread_id);
-    }
-    if (input_state->keyboard_layout == NULL) {
-        input_state->keyboard_layout = GetKeyboardLayout(0);
-    }
+    input_state->ime_target_window = find_ime_target_window(foreground_window);
 
     if (input_state->ime_target_window == NULL) {
         return TRUE;
@@ -160,27 +149,19 @@ void restore_ascii_input(const ASCII_INPUT_STATE* input_state) {
     ImmReleaseContext(input_state->ime_target_window, himc);
 }
 
-HWND find_ime_target_window(HWND foreground_window, DWORD* target_thread_id) {
-    DWORD thread_id = 0;
-
+HWND find_ime_target_window(HWND foreground_window) {
     if (foreground_window != NULL) {
         GUITHREADINFO gui_thread_info;
+        DWORD thread_id = GetWindowThreadProcessId(foreground_window, NULL);
 
-        thread_id = GetWindowThreadProcessId(foreground_window, NULL);
         ZeroMemory(&gui_thread_info, sizeof(gui_thread_info));
         gui_thread_info.cbSize = sizeof(gui_thread_info);
 
         if (thread_id != 0 && GetGUIThreadInfo(thread_id, &gui_thread_info) && gui_thread_info.hwndFocus != NULL) {
-            if (target_thread_id != NULL) {
-                *target_thread_id = thread_id;
-            }
             return gui_thread_info.hwndFocus;
         }
     }
 
-    if (target_thread_id != NULL) {
-        *target_thread_id = thread_id;
-    }
     return foreground_window;
 }
 
@@ -202,76 +183,46 @@ DWORD build_halfwidth_alnum_conversion_mode(DWORD current_conversion_mode) {
     return halfwidth_alnum_mode;
 }
 
-void send_ascii_string_with_layout(const char* str, HKL keyboard_layout) {
+void send_ascii_string_as_unicode_input(const char* str) {
+    INPUT input[2];
     size_t i;
 
     if (str == NULL) {
         return;
     }
 
+    ZeroMemory(input, sizeof(input));
+    input[0].type = INPUT_KEYBOARD;
+    input[0].ki.dwFlags = KEYEVENTF_UNICODE;
+    input[1].type = INPUT_KEYBOARD;
+    input[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+
     for (i = 0; str[i] != '\0'; ++i) {
-        SHORT vk_info = VkKeyScanExA(str[i], keyboard_layout);
-        WORD vk;
-        BYTE shift_state;
+        unsigned char ascii_char = (unsigned char)str[i];
         char error_buf[128];
 
-        if (vk_info == -1) {
+        if (ascii_char > 0x7F) {
             snprintf(error_buf, sizeof(error_buf),
-                     "VkKeyScanExA failed for char 0x%02X.",
-                     (unsigned char)str[i]);
+                     "Non-ASCII character 0x%02X found in ASCII fast path.",
+                     ascii_char);
             show_error_message(error_buf);
             return;
         }
 
-        vk = (WORD)(vk_info & 0xFF);
-        shift_state = (BYTE)((vk_info >> 8) & 0xFF);
-        send_vk_combo(vk, shift_state);
+        input[0].ki.wScan = ascii_char;
+        input[1].ki.wScan = ascii_char;
+
+        if (SendInput(2, input, sizeof(INPUT)) == 0) {
+            snprintf(error_buf, sizeof(error_buf),
+                     "SendInput failed for ASCII char 0x%02X (Error: %lu)",
+                     ascii_char, GetLastError());
+            show_error_message(error_buf);
+            return;
+        }
 
 #if INPUT_WAIT_MS > 0
         Sleep(INPUT_WAIT_MS);
 #endif
-    }
-}
-
-void send_vk_combo(WORD vk, BYTE shift_state) {
-    if (shift_state & 1) {
-        send_vk_key(VK_SHIFT, 0);
-    }
-    if (shift_state & 2) {
-        send_vk_key(VK_CONTROL, 0);
-    }
-    if (shift_state & 4) {
-        send_vk_key(VK_MENU, 0);
-    }
-
-    send_vk_key(vk, 0);
-    send_vk_key(vk, KEYEVENTF_KEYUP);
-
-    if (shift_state & 4) {
-        send_vk_key(VK_MENU, KEYEVENTF_KEYUP);
-    }
-    if (shift_state & 2) {
-        send_vk_key(VK_CONTROL, KEYEVENTF_KEYUP);
-    }
-    if (shift_state & 1) {
-        send_vk_key(VK_SHIFT, KEYEVENTF_KEYUP);
-    }
-}
-
-void send_vk_key(WORD vk, DWORD key_up) {
-    INPUT input;
-
-    ZeroMemory(&input, sizeof(input));
-    input.type = INPUT_KEYBOARD;
-    input.ki.wVk = vk;
-    input.ki.dwFlags = key_up;
-
-    if (SendInput(1, &input, sizeof(input)) == 0) {
-        char error_buf[128];
-        snprintf(error_buf, sizeof(error_buf),
-                 "SendInput failed for virtual key 0x%02X (Error: %lu)",
-                 (unsigned int)vk, GetLastError());
-        show_error_message(error_buf);
     }
 }
 

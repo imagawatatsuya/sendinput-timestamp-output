@@ -15,7 +15,7 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 - ソース: `get_time_sendinput_ascii_fast.c`
 - ビルド: `compile_get_time_sendinput_ascii_fast.bat`
 - 出力例: `2026/03/22(sun) 14:35:41`
-- 特徴: 英数字と記号だけに限定し、フォーカス中コントロールのIME状態をできるだけ半角英数寄りにしてから送信する高速版。
+- 特徴: 英数字と記号だけに限定し、フォーカス中コントロールのIME状態を半角英数寄りにしつつ、ASCII文字そのものをUnicode入力で送る高速版。
 
 ## 使い方
 ### 日本語曜日版
@@ -36,7 +36,7 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 
 ## 前提
 テキストエディタやMicrosoft Word等における利用は想定していない。マクロによるタイムスタンプ生成を推奨する。
-ただしASCII高速版は、日本語曜日版よりもIME設定の影響を受けにくく、対応できる入力先では半角英数寄りのIME状態へ一時的に切り替えてから送信する。
+ただしASCII高速版は、日本語曜日版よりもIME設定の影響を受けにくく、対応できる入力先では半角英数寄りのIME状態へ一時的に切り替えたうえでASCII文字そのものを送信する。
 
 ## 動作確認済み
 - Windwos標準のメモ帳
