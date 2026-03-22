@@ -51,6 +51,6 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 - etc……
 
 ## タイムスタンプをクリップボードにコピーするだけのアプリ
-https://github.com/imagawatatsuya/get-timestamp-clipboard-exe
-実行後にペーストするためIME設定は関係なし。
+https://github.com/imagawatatsuya/get-timestamp-clipboard-exe  
+実行後にペーストするためIME設定は関係なし。  
 「貼り付け」というひと手間が必要だが、汎用性は高い。
