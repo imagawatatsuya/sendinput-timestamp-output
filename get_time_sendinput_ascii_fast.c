@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <string.h>
 #include <time.h>
 #include <windows.h>
 #include <imm.h>
@@ -12,13 +11,25 @@
 
 static const char* wday_ascii_lower[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
 
+typedef struct {
+    HWND ime_target_window;
+    HKL keyboard_layout;
+    BOOL has_ime_context;
+    BOOL has_conversion_state;
+    BOOL previous_ime_open;
+    DWORD previous_conversion_mode;
+    DWORD previous_sentence_mode;
+} ASCII_INPUT_STATE;
+
 void send_alt_tab(void);
 void show_error_message(const char* message);
 void send_ascii_string_with_layout(const char* str, HKL keyboard_layout);
 void send_vk_key(WORD vk, DWORD key_up);
 void send_vk_combo(WORD vk, BYTE shift_state);
-void restore_ime_open_status(HWND hwnd, BOOL has_saved_ime_state, BOOL previous_ime_open);
-BOOL prepare_ascii_input(HWND hwnd, BOOL* has_saved_ime_state, BOOL* previous_ime_open, HKL* keyboard_layout);
+BOOL prepare_ascii_input(HWND foreground_window, ASCII_INPUT_STATE* input_state);
+void restore_ascii_input(const ASCII_INPUT_STATE* input_state);
+HWND find_ime_target_window(HWND foreground_window, DWORD* target_thread_id);
+DWORD build_halfwidth_alnum_conversion_mode(DWORD current_conversion_mode);
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     UNREFERENCED_PARAMETER(hInstance);
@@ -40,12 +51,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     struct tm local_time;
     char time_string[ASCII_BUFFER_SIZE];
     int written;
-    HWND target_window;
-    BOOL has_saved_ime_state = FALSE;
-    BOOL previous_ime_open = FALSE;
-    HKL keyboard_layout = NULL;
+    HWND foreground_window;
+    ASCII_INPUT_STATE input_state;
 
-    target_window = GetForegroundWindow();
+    ZeroMemory(&input_state, sizeof(input_state));
+    foreground_window = GetForegroundWindow();
 
     time(&now);
     if (localtime_s(&local_time, &now) != 0) {
@@ -67,72 +77,129 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
-    if (!prepare_ascii_input(target_window, &has_saved_ime_state, &previous_ime_open, &keyboard_layout)) {
+    if (!prepare_ascii_input(foreground_window, &input_state)) {
         show_error_message("Failed to prepare ASCII input state.");
         return 1;
     }
 
-    send_ascii_string_with_layout(time_string, keyboard_layout);
-    restore_ime_open_status(target_window, has_saved_ime_state, previous_ime_open);
+    send_ascii_string_with_layout(time_string, input_state.keyboard_layout);
+    restore_ascii_input(&input_state);
 
     return 0;
 }
 
-BOOL prepare_ascii_input(HWND hwnd, BOOL* has_saved_ime_state, BOOL* previous_ime_open, HKL* keyboard_layout) {
-    DWORD target_thread_id;
+BOOL prepare_ascii_input(HWND foreground_window, ASCII_INPUT_STATE* input_state) {
     HIMC himc;
+    DWORD target_thread_id = 0;
 
-    if (has_saved_ime_state == NULL || previous_ime_open == NULL || keyboard_layout == NULL) {
+    if (input_state == NULL) {
         return FALSE;
     }
 
-    *has_saved_ime_state = FALSE;
-    *previous_ime_open = FALSE;
+    ZeroMemory(input_state, sizeof(*input_state));
+    input_state->ime_target_window = find_ime_target_window(foreground_window, &target_thread_id);
 
-    target_thread_id = 0;
-    if (hwnd != NULL) {
-        target_thread_id = GetWindowThreadProcessId(hwnd, NULL);
+    if (target_thread_id != 0) {
+        input_state->keyboard_layout = GetKeyboardLayout(target_thread_id);
     }
-    if (target_thread_id == 0) {
-        target_thread_id = GetCurrentThreadId();
-    }
-
-    *keyboard_layout = GetKeyboardLayout(target_thread_id);
-    if (*keyboard_layout == NULL) {
-        *keyboard_layout = GetKeyboardLayout(0);
+    if (input_state->keyboard_layout == NULL) {
+        input_state->keyboard_layout = GetKeyboardLayout(0);
     }
 
-    if (hwnd == NULL) {
+    if (input_state->ime_target_window == NULL) {
         return TRUE;
     }
 
-    himc = ImmGetContext(hwnd);
+    himc = ImmGetContext(input_state->ime_target_window);
     if (himc == NULL) {
         return TRUE;
     }
 
-    *previous_ime_open = ImmGetOpenStatus(himc);
-    *has_saved_ime_state = TRUE;
+    input_state->has_ime_context = TRUE;
+    input_state->previous_ime_open = ImmGetOpenStatus(himc);
+    input_state->has_conversion_state = ImmGetConversionStatus(
+        himc,
+        &input_state->previous_conversion_mode,
+        &input_state->previous_sentence_mode
+    );
+
+    if (input_state->has_conversion_state) {
+        DWORD halfwidth_alnum_mode = build_halfwidth_alnum_conversion_mode(
+            input_state->previous_conversion_mode
+        );
+        ImmSetConversionStatus(himc, halfwidth_alnum_mode, input_state->previous_sentence_mode);
+    }
+
     ImmSetOpenStatus(himc, FALSE);
-    ImmReleaseContext(hwnd, himc);
+    ImmReleaseContext(input_state->ime_target_window, himc);
 
     return TRUE;
 }
 
-void restore_ime_open_status(HWND hwnd, BOOL has_saved_ime_state, BOOL previous_ime_open) {
+void restore_ascii_input(const ASCII_INPUT_STATE* input_state) {
     HIMC himc;
 
-    if (!has_saved_ime_state || hwnd == NULL) {
+    if (input_state == NULL || !input_state->has_ime_context || input_state->ime_target_window == NULL) {
         return;
     }
 
-    himc = ImmGetContext(hwnd);
+    himc = ImmGetContext(input_state->ime_target_window);
     if (himc == NULL) {
         return;
     }
 
-    ImmSetOpenStatus(himc, previous_ime_open);
-    ImmReleaseContext(hwnd, himc);
+    if (input_state->has_conversion_state) {
+        ImmSetConversionStatus(
+            himc,
+            input_state->previous_conversion_mode,
+            input_state->previous_sentence_mode
+        );
+    }
+
+    ImmSetOpenStatus(himc, input_state->previous_ime_open);
+    ImmReleaseContext(input_state->ime_target_window, himc);
+}
+
+HWND find_ime_target_window(HWND foreground_window, DWORD* target_thread_id) {
+    DWORD thread_id = 0;
+
+    if (foreground_window != NULL) {
+        GUITHREADINFO gui_thread_info;
+
+        thread_id = GetWindowThreadProcessId(foreground_window, NULL);
+        ZeroMemory(&gui_thread_info, sizeof(gui_thread_info));
+        gui_thread_info.cbSize = sizeof(gui_thread_info);
+
+        if (thread_id != 0 && GetGUIThreadInfo(thread_id, &gui_thread_info) && gui_thread_info.hwndFocus != NULL) {
+            if (target_thread_id != NULL) {
+                *target_thread_id = thread_id;
+            }
+            return gui_thread_info.hwndFocus;
+        }
+    }
+
+    if (target_thread_id != NULL) {
+        *target_thread_id = thread_id;
+    }
+    return foreground_window;
+}
+
+DWORD build_halfwidth_alnum_conversion_mode(DWORD current_conversion_mode) {
+    DWORD halfwidth_alnum_mode = current_conversion_mode;
+
+    halfwidth_alnum_mode &= ~(IME_CMODE_NATIVE |
+                              IME_CMODE_KATAKANA |
+                              IME_CMODE_FULLSHAPE |
+                              IME_CMODE_ROMAN |
+                              IME_CMODE_CHARCODE |
+                              IME_CMODE_HANJACONVERT |
+                              IME_CMODE_SOFTKBD |
+                              IME_CMODE_NOCONVERSION |
+                              IME_CMODE_EUDC |
+                              IME_CMODE_SYMBOL |
+                              IME_CMODE_FIXED);
+
+    return halfwidth_alnum_mode;
 }
 
 void send_ascii_string_with_layout(const char* str, HKL keyboard_layout) {
