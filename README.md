@@ -27,11 +27,15 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 ブラウザのURL欄、日本語テキストエディタなど、IMEの影響を受けやすい入力先を意識した派生版。標準 `Edit` / `RichEdit` 系では直接挿入を優先し、従来の1文字ずつの送信はフォールバックとして残している。
 
 初回の実行時にはダイアログが表示されるので **「詳細情報」** という部分をクリックする
+
 ![image](https://github.com/user-attachments/assets/5f6bd6ce-de10-4632-b9ed-18a5cdb5e393)
+
 初回のみ、許可を求めるダイアログが表示されます。Windowsの仕様です。
 
 **「実行」** ボタンをクリックする
+
 ![image](https://github.com/user-attachments/assets/e4ba3b29-0fce-46d4-aaee-6015ae06f63f)
+
 **2度目の実行からはダイアログは表示されません。**
 
 ## 前提
@@ -53,5 +57,5 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 
 ## タイムスタンプをクリップボードにコピーするだけのアプリ
 https://github.com/imagawatatsuya/get-timestamp-clipboard-exe
-実行後にペーストするためIME設定は関係なし。
-「貼り付け」というひと手間が必要だが、汎用性は高い。
+- 実行後にペーストするためIME設定は関係なし。
+- 「貼り付け」というひと手間が必要だが、汎用性は高い。
