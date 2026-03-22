@@ -15,7 +15,7 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 - ソース: `get_time_sendinput_ascii_fast.c`
 - ビルド: `compile_get_time_sendinput_ascii_fast.bat`
 - 出力例: `2026/03/22(sun) 14:35:41`
-- 特徴: 英数字と記号だけに限定し、フォーカス中コントロールのIME状態を半角英数寄りにしつつ、ASCII文字そのものをUnicode入力で送る高速版。
+- 特徴: 英数字と記号だけに限定し、標準 `Edit` / `RichEdit` 系コントロールには `EM_REPLACESEL` で直接挿入し、それ以外ではIME状態を半角英数寄りにしつつASCII文字そのものをUnicode入力で送る高速版。
 
 ## 使い方
 ### 日本語曜日版
@@ -24,7 +24,7 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 
 ### ASCII高速版
 `get_time_sendinput_ascii_fast.exe`をダブルクリックすると、テキスト入力領域にASCII形式のタイムスタンプが自動的に出力される。
-ブラウザのURL欄、日本語テキストエディタなど、IMEの影響を受けやすい入力先を意識した派生版。
+ブラウザのURL欄、日本語テキストエディタなど、IMEの影響を受けやすい入力先を意識した派生版。標準 `Edit` / `RichEdit` 系では直接挿入を優先し、従来の1文字ずつの送信はフォールバックとして残している。
 
 初回の実行時にはダイアログが表示されるので **「詳細情報」** という部分をクリックする
 ![image](https://github.com/user-attachments/assets/5f6bd6ce-de10-4632-b9ed-18a5cdb5e393)
@@ -37,6 +37,7 @@ https://github.com/imagawatatsuya/sendinput-timestamp-output/releases
 ## 前提
 テキストエディタやMicrosoft Word等における利用は想定していない。マクロによるタイムスタンプ生成を推奨する。
 ただしASCII高速版は、日本語曜日版よりもIME設定の影響を受けにくく、対応できる入力先では半角英数寄りのIME状態へ一時的に切り替えたうえでASCII文字そのものを送信する。
+また、標準 `Edit` / `RichEdit` 系コントロールではIME制御や `SendInput` を使わずに一括挿入する。
 
 ## 動作確認済み
 - Windwos標準のメモ帳
