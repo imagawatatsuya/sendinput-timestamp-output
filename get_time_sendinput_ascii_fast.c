@@ -8,6 +8,7 @@
 #define STARTUP_WAIT_MS 100
 #define ALT_TAB_WAIT_MS 50
 #define POST_ALT_TAB_WAIT_MS 350
+#define WINDOW_CLASS_NAME_SIZE 64
 
 static const char* wday_ascii_lower[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
 
@@ -27,6 +28,9 @@ BOOL prepare_ascii_input(HWND foreground_window, ASCII_INPUT_STATE* input_state)
 void restore_ascii_input(const ASCII_INPUT_STATE* input_state);
 HWND find_ime_target_window(HWND foreground_window);
 DWORD build_halfwidth_alnum_conversion_mode(DWORD current_conversion_mode);
+BOOL try_insert_ascii_string_directly(HWND target_window, const char* str);
+BOOL is_direct_insert_target_class(HWND target_window);
+BOOL convert_ascii_to_wide_string(const char* str, WCHAR* wide_str, size_t wide_str_count);
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     UNREFERENCED_PARAMETER(hInstance);
@@ -72,6 +76,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (written < 0 || written >= (int)sizeof(time_string)) {
         show_error_message("Failed to format ASCII time string after Alt+Tab.");
         return 1;
+    }
+
+    if (try_insert_ascii_string_directly(find_ime_target_window(foreground_window), time_string)) {
+        return 0;
     }
 
     if (!prepare_ascii_input(foreground_window, &input_state)) {
@@ -181,6 +189,72 @@ DWORD build_halfwidth_alnum_conversion_mode(DWORD current_conversion_mode) {
                               IME_CMODE_FIXED);
 
     return halfwidth_alnum_mode;
+}
+
+BOOL try_insert_ascii_string_directly(HWND target_window, const char* str) {
+    WCHAR wide_str[ASCII_BUFFER_SIZE];
+
+    if (target_window == NULL || str == NULL || !is_direct_insert_target_class(target_window)) {
+        return FALSE;
+    }
+
+    if (!convert_ascii_to_wide_string(str, wide_str, sizeof(wide_str) / sizeof(wide_str[0]))) {
+        return FALSE;
+    }
+
+    SendMessageW(target_window, EM_REPLACESEL, TRUE, (LPARAM)wide_str);
+    return TRUE;
+}
+
+BOOL is_direct_insert_target_class(HWND target_window) {
+    WCHAR class_name[WINDOW_CLASS_NAME_SIZE];
+
+    if (target_window == NULL) {
+        return FALSE;
+    }
+
+    if (GetClassNameW(target_window, class_name, sizeof(class_name) / sizeof(class_name[0])) == 0) {
+        return FALSE;
+    }
+
+    if (lstrcmpW(class_name, L"Edit") == 0 ||
+        lstrcmpW(class_name, L"RichEdit") == 0 ||
+        lstrcmpW(class_name, L"RICHEDIT50W") == 0) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOL convert_ascii_to_wide_string(const char* str, WCHAR* wide_str, size_t wide_str_count) {
+    size_t i;
+
+    if (str == NULL || wide_str == NULL || wide_str_count == 0) {
+        return FALSE;
+    }
+
+    for (i = 0; str[i] != '\0'; ++i) {
+        unsigned char ascii_char = (unsigned char)str[i];
+        char error_buf[128];
+
+        if (i + 1 >= wide_str_count) {
+            show_error_message("ASCII string is too long for direct insertion.");
+            return FALSE;
+        }
+
+        if (ascii_char > 0x7F) {
+            snprintf(error_buf, sizeof(error_buf),
+                     "Non-ASCII character 0x%02X found in ASCII direct insert path.",
+                     ascii_char);
+            show_error_message(error_buf);
+            return FALSE;
+        }
+
+        wide_str[i] = (WCHAR)ascii_char;
+    }
+
+    wide_str[i] = L'\0';
+    return TRUE;
 }
 
 void send_ascii_string_as_unicode_input(const char* str) {
